@@ -1221,34 +1221,65 @@ function init(){
 
 // Boot sequence: show app immediately from config.js,
 // then update silently from Blob in background
-// ─── BLOB SETTINGS URL ───────────────────────────────────────────
-const SETTINGS_URL = '/.netlify/functions/settings';
+// ─── FIREBASE SYNC ───────────────────────────────────────────────
+// Reads/writes settings to Firebase Firestore.
+// FIREBASE_CONFIG is set in config.js per location.
+// Each location has its own document in the "locations" collection.
 
-// Merge blob data on top of LOCATION_CONFIG defaults
-function applyBlobConfig(blob) {
-  if (!blob || !Object.keys(blob).length) return;
-  config = Object.assign({}, LOCATION_CONFIG, blob);
+function applyRemoteConfig(data) {
+  if (!data || !Object.keys(data).length) return;
+  config = Object.assign({}, LOCATION_CONFIG, data);
   if (!config.basePrices)       config.basePrices       = LOCATION_CONFIG.basePrices;
   if (!config.plans)            config.plans             = LOCATION_CONFIG.plans;
   if (!config.enabledServices)  config.enabledServices   = LOCATION_CONFIG.enabledServices;
   if (!config.enabledReferrals) config.enabledReferrals  = LOCATION_CONFIG.enabledReferrals;
   if (!config.referralPartners) config.referralPartners  = LOCATION_CONFIG.referralPartners;
   if (!config.customReferrals)  config.customReferrals   = [];
-  if (config.enabledServices.intwindows === undefined) config.enabledServices.intwindows = false;
-  if (config.enabledServices.pressure   === undefined) config.enabledServices.pressure   = false;
+  if (config.enabledServices && config.enabledServices.intwindows === undefined)
+    config.enabledServices.intwindows = false;
+  if (config.enabledServices && config.enabledServices.pressure === undefined)
+    config.enabledServices.pressure = false;
 }
 
-// Save full config to Blob store (called after every admin Save)
-async function saveSettingsToBlob() {
+function getFirebaseUrl() {
+  const fc = window.FIREBASE_CONFIG;
+  if (!fc || !fc.projectId || !fc.locationId) return null;
+  return `https://firestore.googleapis.com/v1/projects/${fc.projectId}/databases/(default)/documents/locations/${fc.locationId}?key=${fc.apiKey}`;
+}
+
+async function loadSettingsFromFirebase() {
+  const url = getFirebaseUrl();
+  if (!url) return;
   try {
-    const res = await fetch(SETTINGS_URL, {
-      method: 'POST',
+    const timeout = new Promise((_,reject) => setTimeout(()=>reject(new Error('timeout')),5000));
+    const res = await Promise.race([fetch(url), timeout]);
+    if (!res.ok) return;
+    const doc = await res.json();
+    if (!doc.fields || !doc.fields.settings) return;
+    const data = JSON.parse(doc.fields.settings.stringValue);
+    applyRemoteConfig(data);
+  } catch(e) {
+    console.warn('Firebase load skipped:', e.message);
+  }
+}
+
+async function saveSettingsToFirebase() {
+  const url = getFirebaseUrl();
+  if (!url) return false;
+  try {
+    const patchUrl = url.replace('?key=', '?updateMask.fieldPaths=settings&key=');
+    const res = await fetch(patchUrl, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config)
+      body: JSON.stringify({
+        fields: {
+          settings: { stringValue: JSON.stringify(config) }
+        }
+      })
     });
     return res.ok;
-  } catch (e) {
-    console.error('Failed to save settings to Blob:', e);
+  } catch(e) {
+    console.error('Firebase save failed:', e);
     return false;
   }
 }
@@ -1260,28 +1291,17 @@ async function boot() {
   if(loadingEl) loadingEl.classList.add('hidden');
   showScreen('home');
 
-  // Fetch Blob settings in background — 4s timeout using Promise.race
-  try {
-    const timeout = new Promise((_,reject) =>
-      setTimeout(() => reject(new Error('timeout')), 4000)
-    );
-    const res = await Promise.race([fetch(SETTINGS_URL), timeout]);
-    if (res.ok) {
-      const blob = await res.json();
-      if (blob && Object.keys(blob).length) {
-        applyBlobConfig(blob);
-        applyConfig();
-        renderSizeGrid();
-        renderServiceChecklist();
-        renderNeedsCard();
-        renderReferralSection();
-        renderTiers();
-        updateHeroClubDesc();
-        autoSuggestPlan();
-      }
-    }
-  } catch (e) {
-    console.warn('Blob fetch skipped (timeout or offline):', e.message);
+  // Load Firebase settings in background and re-render if different
+  if(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.projectId) {
+    await loadSettingsFromFirebase();
+    applyConfig();
+    renderSizeGrid();
+    renderServiceChecklist();
+    renderNeedsCard();
+    renderReferralSection();
+    renderTiers();
+    updateHeroClubDesc();
+    autoSuggestPlan();
   }
 }
 
@@ -2823,16 +2843,15 @@ async function saveAdmin(){
   });
 
   try{
-    // Save to Netlify Blobs — single source of truth, no localStorage
-    saveSettingsToBlob().then(ok => {
-      const statusEl=document.getElementById('saveStatus-'+activeAdminTab);
-      if(statusEl){
-        statusEl.textContent = ok ? '✓ Saved — all devices updated' : '✓ Saved locally (offline)';
-        statusEl.className='save-status ok';
-      }
-    });
     const statusEl=document.getElementById('saveStatus-'+activeAdminTab);
     if(statusEl){ statusEl.textContent='Saving…'; statusEl.className='save-status ok'; }
+    saveSettingsToFirebase().then(ok => {
+      const el=document.getElementById('saveStatus-'+activeAdminTab);
+      if(el){
+        el.textContent = ok ? '✓ Saved — all devices updated' : '⚠ Saved locally only (check Firebase config)';
+        el.className='save-status ok';
+      }
+    });
     applyConfig(); renderSizeGrid(); renderServiceChecklist(); renderNeedsCard(); renderReferralSection(); renderTiers(); autoSuggestPlan(); updateHeroClubDesc();
     selectedPlanId=null;
     if(activeAdminTab==='pricing') buildDiscountPreview();
