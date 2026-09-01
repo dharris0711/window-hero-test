@@ -19,7 +19,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   -webkit-overflow-scrolling: touch;
 }
 </style>
-<title>Window Hero Test — Tech Toolkit</title>
+<title>Window Hero — Tech Toolkit</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="config.js"></script>
 <style>
@@ -1013,7 +1013,7 @@ body{font-family:'Montserrat',sans-serif;background:#f0f2f5;color:#1a2535;min-he
           </button>
           <button class="pmt-btn" id="pmt-sqft" onclick="setPricingMode('sqft',this)">
             <span class="pmt-icon">📐</span>
-            <span class="pmt-text">Per Sq Ft<small>¢ per sq ft</small></span>
+            <span class="pmt-text">Per Sq Ft<small>$ per sq ft (e.g. 0.16)</small></span>
           </button>
         </div>
       </div>
@@ -1420,7 +1420,7 @@ function resolvePrice(svcId, size){
   const raw = config.basePrices[svcId]?.[size] || 0;
   if(config.pricingMode === 'sqft'){
     const sqft = config.sqftSizes?.[size] || 0;
-    return (raw / 100) * sqft; // raw is cents/sqft
+    return raw * sqft; // raw is $/sqft (e.g. 0.16), sqft is sq footage (e.g. 2300) → $368
   }
   return raw; // flat dollars
 }
@@ -2474,7 +2474,7 @@ function setPricingMode(mode, btn){
                   medium:'Medium<br><span style="font-weight:400;font-size:10px;opacity:.7">2,501–3,500</span>',
                   large:'Large<br><span style="font-weight:400;font-size:10px;opacity:.7">&gt;3,500 sq ft</span>'};
     const el=document.getElementById('pth-'+sz);
-    if(el) el.innerHTML=labels[sz]+(isSqft?`<br><span style="font-weight:600;font-size:10px;color:var(--sky)">¢ per sq ft</span>`:'');
+    if(el) el.innerHTML=labels[sz]+(isSqft?`<br><span style="font-weight:600;font-size:10px;color:var(--sky)">$ per sq ft</span>`:'');
   });
   buildPriceTable(true); // rebuild with current values
   buildDiscountPreview();
