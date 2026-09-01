@@ -1,10 +1,19 @@
-# netlify.toml
+# netlify.toml — Window Hero plain HTML + Functions site
 [build]
-  functions = "netlify/functions"
   publish   = "."
-
+  functions = "netlify/functions"
+ 
+[build.environment]
+  NODE_VERSION = "18"
+  NETLIFY_USE_YARN = "false"
+ 
+# Disable Next.js and other framework plugins
+[build.processing]
+  skip_processing = false
+ 
 [[headers]]
   for = "/*"
   [headers.values]
     X-Frame-Options        = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
+ 
