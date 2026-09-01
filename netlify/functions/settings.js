@@ -1,60 +1,72 @@
-netlify/functions/settings.js
+
 // netlify/functions/settings.js
 // ═══════════════════════════════════════════════════════════════
-// Window Hero — Location Settings Blob Store
-// Reads and writes location config to Netlify Blobs.
-// Each Netlify site has its own isolated Blob store automatically.
-// No token needed — this function runs server-side.
+// Window Hero — Location Settings using Netlify Blobs
+// CommonJS format — works without esbuild bundler
 // ═══════════════════════════════════════════════════════════════
-import { getStore } from "@netlify/blobs";
 
-const SETTINGS_KEY = "location-config";
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+exports.handler = async function(event) {
+  const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
 
-export default async (req) => {
   // Handle preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: CORS_HEADERS, body: '' };
   }
 
-  const store = getStore("settings");
+  let store;
+  try {
+    const { getStore } = require('@netlify/blobs');
+    store = getStore('settings');
+  } catch(e) {
+    return {
+      statusCode: 500,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ok: false, error: 'Blobs not available: ' + e.message })
+    };
+  }
 
-  // GET — return saved settings (or empty object if none saved yet)
-  if (req.method === "GET") {
+  const SETTINGS_KEY = 'location-config';
+
+  // GET — return saved settings
+  if (event.httpMethod === 'GET') {
     try {
-      const saved = await store.get(SETTINGS_KEY, { type: "json" });
-      return Response.json(saved ?? {}, { headers: CORS_HEADERS });
-    } catch (err) {
-      console.error("Blob GET error:", err);
-      return Response.json({}, { headers: CORS_HEADERS });
+      const saved = await store.get(SETTINGS_KEY, { type: 'json' });
+      return {
+        statusCode: 200,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify(saved || {})
+      };
+    } catch(err) {
+      return {
+        statusCode: 200,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      };
     }
   }
 
-  // POST — save settings from admin panel
-  if (req.method === "POST") {
+  // POST — save settings
+  if (event.httpMethod === 'POST') {
     try {
-      const body = await req.json();
+      const body = JSON.parse(event.body || '{}');
       await store.setJSON(SETTINGS_KEY, body);
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      });
-    } catch (err) {
-      console.error("Blob POST error:", err);
-      return new Response(JSON.stringify({ ok: false, error: err.message }), {
-        status: 500,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      });
+      return {
+        statusCode: 200,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ok: true })
+      };
+    } catch(err) {
+      return {
+        statusCode: 500,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ok: false, error: err.message })
+      };
     }
   }
 
-  return new Response("Method not allowed", { status: 405, headers: CORS_HEADERS });
-};
-
-export const config = {
-  path: "/.netlify/functions/settings",
+  return { statusCode: 405, headers: CORS_HEADERS, body: 'Method not allowed' };
 };
